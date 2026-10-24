@@ -31,6 +31,17 @@ git_cfg() { git -c http.sslVerify=false "$@"; }
 
 # 1. 确认 token 有效 + 拿到登录名
 log "校验 token ..."
+
+# ⚠️ 前置检查:index.html 里绝不能出现 markdown 粗体标记 ** **
+# 2026-10-24 踩过:GitHub Pages legacy build 遇到 `**` + 中文字符紧跟时
+# 会静默报 "Page build failed."(不提示原因,只 errored)。
+# 现象:`**大 swab...**` 失败,而 `**Kelli 实测...**` 正常 —— 星号紧跟中文才是触发条件。
+# 根因是 markdown 语法根本不该出现在 HTML 的 JS 字符串里。
+if grep -q '\*\*' "$WORKDIR/index.html" 2>/dev/null; then
+  n=$(grep -o '\*\*' "$WORKDIR/index.html" | wc -l)
+  err "index.html 里发现 $n 个 '**' —— 会导致 GitHub Pages 构建失败,请改成普通文本或括号"
+fi
+
 me=$(curl -sS -A "ink-atlas-deploy" -H "Authorization: Bearer $GITHUB_TOKEN" "$API/user")
 login=$(printf '%s' "$me" | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null || true)
 [ -n "$login" ] || err "token 无效: $(printf '%s' "$me" | head -c 200)"
