@@ -42,6 +42,26 @@ if grep -q '\*\*' "$WORKDIR/index.html" 2>/dev/null; then
   err "index.html 里发现 $n 个 '**' —— 会导致 GitHub Pages 构建失败,请改成普通文本或括号"
 fi
 
+# ⚠️ 前置检查:JS 语法必须合法(否则页面全白,build 却是成功的)
+# 2026-10-24 踩过:summary 字符串里写了 "Noodler's Tokyo Gift",
+# 单引号被提前闭合 → SyntaxError: Unexpected identifier 's'。
+# GitHub Pages 构建完全不受影响(照样 built),但页面渲染不出来。
+if command -v node >/dev/null 2>&1; then
+  python3 - "$WORKDIR/index.html" << 'PYCHK' > /tmp/_app_blk.js
+import re, sys
+c = open(sys.argv[1], encoding='utf-8').read()
+blocks = re.findall(r'<script(?![^>]*src=)[^>]*>(.*?)</script>', c, re.S)
+sys.stdout.write(blocks[-1] if blocks else '')
+PYCHK
+  if [ -s /tmp/_app_blk.js ]; then
+    if ! node --check /tmp/_app_blk.js 2>/tmp/_js_err.txt; then
+      err "index.html 的 JS 有语法错误,会导致页面完全白屏:
+$(head -8 /tmp/_js_err.txt | sed 's/^/    /')"
+    fi
+  fi
+  rm -f /tmp/_app_blk.js /tmp/_js_err.txt /tmp/_blk0.js
+fi
+
 me=$(curl -sS -A "ink-atlas-deploy" -H "Authorization: Bearer $GITHUB_TOKEN" "$API/user")
 login=$(printf '%s' "$me" | python3 -c "import sys,json; print(json.load(sys.stdin).get('login',''))" 2>/dev/null || true)
 [ -n "$login" ] || err "token 无效: $(printf '%s' "$me" | head -c 200)"
